@@ -4,24 +4,29 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/vendi/conductor/internal/config"
 	"github.com/vendi/conductor/internal/health"
 	"github.com/vendi/conductor/internal/process"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // ServiceInfo is the data sent to the frontend for each service.
 type ServiceInfo struct {
-	Name      string `json:"name"`
-	Status    string `json:"status"`
-	Port      int    `json:"port"`
-	Uptime    string `json:"uptime"`
-	UptimeSec int    `json:"uptimeSec"`
-	Cmd       string `json:"cmd"`
-	Color     string `json:"color"`
-	PID       int    `json:"pid"`
+	Name         string `json:"name"`
+	Status       string `json:"status"`
+	Port         int    `json:"port"`
+	Uptime       string `json:"uptime"`
+	UptimeSec    int    `json:"uptimeSec"`
+	Cmd          string `json:"cmd"`
+	Color        string `json:"color"`
+	PID          int    `json:"pid"`
+	Restart      string `json:"restart"`
+	RestartCount int    `json:"restartCount"`
 }
 
 // LogEntry represents a single log line sent to the frontend.
@@ -41,7 +46,10 @@ type App struct {
 	procCtx    context.Context
 	procCancel context.CancelFunc
 
-	cfg     *config.Config
+	cfg           *config.Config
+	configPath    string
+	configModTime time.Time
+
 	manager *process.Manager
 	checker *health.Checker
 
@@ -74,7 +82,41 @@ func (a *App) LoadConfig(path string) (*config.Config, error) {
 		return nil, err
 	}
 	a.cfg = cfg
+
+	// Track path and mod time for hot-reload.
+	resolved := path
+	if resolved == "" {
+		resolved = filepath.Join(mustGetwd(), "conductor.yaml")
+	}
+	a.configPath = resolved
+	if info, err := os.Stat(resolved); err == nil {
+		a.configModTime = info.ModTime()
+	}
+
 	return cfg, nil
+}
+
+// ReloadConfigIfChanged checks whether conductor.yaml has changed since last
+// load and reloads it if so. Returns true when the config was reloaded.
+// Should only be called when services are NOT running.
+func (a *App) ReloadConfigIfChanged() (bool, error) {
+	if a.configPath == "" {
+		return false, nil
+	}
+	info, err := os.Stat(a.configPath)
+	if err != nil {
+		return false, nil
+	}
+	if !info.ModTime().After(a.configModTime) {
+		return false, nil
+	}
+	cfg, err := config.Load(a.configPath)
+	if err != nil {
+		return false, fmt.Errorf("config reload error: %w", err)
+	}
+	a.cfg = cfg
+	a.configModTime = info.ModTime()
+	return true, nil
 }
 
 // GetServices returns current status of all services.
@@ -94,10 +136,11 @@ func (a *App) GetServices() []ServiceInfo {
 	for _, name := range order {
 		svc := a.cfg.Services[name]
 		info := ServiceInfo{
-			Name:  name,
-			Port:  svc.Port,
-			Cmd:   svc.Cmd,
-			Color: svc.Color,
+			Name:    name,
+			Port:    svc.Port,
+			Cmd:     svc.Cmd,
+			Color:   svc.Color,
+			Restart: svc.Restart,
 		}
 
 		if mgr != nil && isRunning {
@@ -107,6 +150,7 @@ func (a *App) GetServices() []ServiceInfo {
 				uptime := proc.Uptime()
 				info.UptimeSec = int(uptime.Seconds())
 				info.Uptime = formatUptime(uptime)
+				info.RestartCount = mgr.GetRestartCount(name)
 			} else {
 				info.Status = "stopped"
 			}
@@ -266,6 +310,35 @@ func (a *App) GetLogsForService(service string, limit int) []LogEntry {
 	}
 
 	return filtered
+}
+
+// ExportLogsToFile opens a native save dialog and writes all log entries to file.
+func (a *App) ExportLogsToFile() error {
+	path, err := runtime.SaveFileDialog(a.wailsCtx, runtime.SaveDialogOptions{
+		Title:           "Export Logs",
+		DefaultFilename: "conductor-logs.txt",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "Text Files (*.txt)", Pattern: "*.txt"},
+			{DisplayName: "Log Files (*.log)", Pattern: "*.log"},
+		},
+	})
+	if err != nil || path == "" {
+		return nil
+	}
+
+	a.logMu.RLock()
+	defer a.logMu.RUnlock()
+
+	var sb strings.Builder
+	for _, entry := range a.logs {
+		prefix := " "
+		if entry.IsStderr {
+			prefix = "!"
+		}
+		sb.WriteString(fmt.Sprintf("[%s] [%s%s] %s\n", entry.Timestamp, prefix, entry.Service, entry.Text))
+	}
+
+	return os.WriteFile(path, []byte(sb.String()), 0644)
 }
 
 // IsRunning returns whether services are currently running.

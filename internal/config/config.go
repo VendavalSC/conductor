@@ -16,13 +16,15 @@ type Config struct {
 }
 
 type Service struct {
-	Cmd       string            `yaml:"cmd"`
-	Dir       string            `yaml:"dir"`
-	Port      int               `yaml:"port"`
-	Color     string            `yaml:"color"`
-	Env       map[string]string `yaml:"env"`
-	DependsOn []string          `yaml:"depends_on"`
-	Health    *HealthCheck      `yaml:"health"`
+	Cmd         string            `yaml:"cmd"`
+	Dir         string            `yaml:"dir"`
+	Port        int               `yaml:"port"`
+	Color       string            `yaml:"color"`
+	Env         map[string]string `yaml:"env"`
+	DependsOn   []string          `yaml:"depends_on"`
+	Health      *HealthCheck      `yaml:"health"`
+	Restart     string            `yaml:"restart"`      // "always", "on-failure", "never" (default: "never")
+	MaxRestarts int               `yaml:"max_restarts"` // 0 = unlimited
 }
 
 type HealthCheck struct {

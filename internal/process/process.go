@@ -62,19 +62,21 @@ type Process struct {
 	PID       int
 	ExitCode  int
 
-	cmd    *exec.Cmd
-	cancel context.CancelFunc
-	done   chan struct{} // closed when the process exits
-	mu     sync.RWMutex
-	logCh  chan<- LogLine
+	cmd     *exec.Cmd
+	cancel  context.CancelFunc
+	done    chan struct{} // closed when the process exits
+	mu      sync.RWMutex
+	logCh   chan<- LogLine
+	crashCh chan<- string // notifies manager when process crashes; may be nil
 }
 
-func New(name string, cfg *config.Service, logCh chan<- LogLine) *Process {
+func New(name string, cfg *config.Service, logCh chan<- LogLine, crashCh chan<- string) *Process {
 	return &Process{
-		Name:   name,
-		Config: cfg,
-		Status: StatusStopped,
-		logCh:  logCh,
+		Name:    name,
+		Config:  cfg,
+		Status:  StatusStopped,
+		logCh:   logCh,
+		crashCh: crashCh,
 	}
 }
 
@@ -237,18 +239,20 @@ func (p *Process) waitForExit() {
 	close(p.done)
 
 	p.mu.Lock()
-	defer p.mu.Unlock()
 
 	// If Stop() already set us to stopping/stopped, don't override.
 	if p.Status == StatusStopping || p.Status == StatusStopped {
+		p.mu.Unlock()
 		return
 	}
 
+	crashed := false
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			p.ExitCode = exitErr.ExitCode()
 		}
 		p.Status = StatusCrashed
+		crashed = true
 		p.sendLog(LogLine{
 			Service:   p.Name,
 			Text:      fmt.Sprintf("process exited with error: %v", err),
@@ -262,5 +266,14 @@ func (p *Process) waitForExit() {
 			Text:      "process exited cleanly",
 			Timestamp: time.Now(),
 		})
+	}
+	p.mu.Unlock()
+
+	// Notify manager about crash (non-blocking).
+	if crashed && p.crashCh != nil {
+		select {
+		case p.crashCh <- p.Name:
+		default:
+		}
 	}
 }

@@ -69,7 +69,13 @@ export function ServiceRow({
               :{service.port}
             </span>
           )}
-          <span className="text-[10px] text-conductor-muted/60 font-mono truncate max-w-[160px]">
+          {service.restart && service.restart !== "never" && (
+            <span className="text-[9px] font-semibold text-conductor-muted/40 uppercase tracking-wide">
+              ↺{service.restart === "always" ? " always" : " on-fail"}
+              {service.restartCount > 0 && <span className="text-conductor-muted/60 ml-0.5">×{service.restartCount}</span>}
+            </span>
+          )}
+          <span className="text-[10px] text-conductor-muted/60 font-mono truncate max-w-[140px]">
             {service.cmd}
           </span>
         </div>

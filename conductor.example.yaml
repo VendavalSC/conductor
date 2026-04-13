@@ -11,6 +11,8 @@ services:
     dir: ./frontend
     port: 3000
     color: cyan
+    restart: on-failure        # "always", "on-failure", "never" (default: "never")
+    max_restarts: 5            # 0 = unlimited
     health:
       url: http://localhost:3000
       interval: 5s
@@ -24,6 +26,7 @@ services:
     dir: ./backend
     port: 8080
     color: green
+    restart: always
     depends_on:
       - db
       - redis

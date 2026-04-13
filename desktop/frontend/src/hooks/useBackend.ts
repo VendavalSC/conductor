@@ -5,11 +5,11 @@ import type { ServiceInfo, LogEntry, AddServiceInput, DetectedService } from "..
 const isDev = !window.go;
 
 const mockServices: ServiceInfo[] = [
-  { name: "web", status: "healthy", port: 3000, uptime: "12m 34s", uptimeSec: 754, cmd: "npm run dev", color: "cyan", pid: 12345 },
-  { name: "api", status: "running", port: 8080, uptime: "12m 30s", uptimeSec: 750, cmd: "go run ./cmd/server", color: "green", pid: 12346 },
-  { name: "db", status: "healthy", port: 5432, uptime: "12m 35s", uptimeSec: 755, cmd: "postgres", color: "yellow", pid: 12347 },
-  { name: "redis", status: "healthy", port: 6379, uptime: "12m 35s", uptimeSec: 755, cmd: "redis-server", color: "red", pid: 12348 },
-  { name: "worker", status: "crashed", port: 0, uptime: "-", uptimeSec: 0, cmd: "celery worker", color: "magenta", pid: 0 },
+  { name: "web", status: "healthy", port: 3000, uptime: "12m 34s", uptimeSec: 754, cmd: "npm run dev", color: "cyan", pid: 12345, restart: "on-failure", restartCount: 0 },
+  { name: "api", status: "running", port: 8080, uptime: "12m 30s", uptimeSec: 750, cmd: "go run ./cmd/server", color: "green", pid: 12346, restart: "always", restartCount: 2 },
+  { name: "db", status: "healthy", port: 5432, uptime: "12m 35s", uptimeSec: 755, cmd: "postgres", color: "yellow", pid: 12347, restart: "never", restartCount: 0 },
+  { name: "redis", status: "healthy", port: 6379, uptime: "12m 35s", uptimeSec: 755, cmd: "redis-server", color: "red", pid: 12348, restart: "never", restartCount: 0 },
+  { name: "worker", status: "crashed", port: 0, uptime: "-", uptimeSec: 0, cmd: "celery worker", color: "magenta", pid: 0, restart: "on-failure", restartCount: 3 },
 ];
 
 const mockLogs: LogEntry[] = [
@@ -29,6 +29,28 @@ const mockDetected: DetectedService[] = [
   { name: "frontend", cmd: "npm run dev", dir: "/home/user/project/frontend", port: 3000, color: "cyan", source: "frontend/package.json scripts.dev", dependsOn: [] },
   { name: "backend", cmd: "go run ./cmd/server/", dir: "/home/user/project", port: 8080, color: "green", source: "go.mod cmd/server", dependsOn: [] },
 ];
+
+const mockConfigRaw = `# conductor.yaml — managed by Conductor
+
+name: my-project
+services:
+  web:
+    cmd: npm run dev
+    port: 3000
+    color: cyan
+    restart: on-failure
+  api:
+    cmd: go run ./cmd/server
+    port: 8080
+    color: green
+    restart: always
+    depends_on:
+      - db
+  db:
+    cmd: postgres
+    port: 5432
+    color: yellow
+`;
 
 export function useBackend() {
   const [services, setServices] = useState<ServiceInfo[]>([]);
@@ -105,6 +127,7 @@ export function useBackend() {
       setServices((prev) => [...prev, {
         name: input.name, status: "stopped", port: input.port,
         uptime: "-", uptimeSec: 0, cmd: input.cmd, color: input.color || "cyan", pid: 0,
+        restart: input.restart || "never", restartCount: 0,
       }]);
       return;
     }
@@ -143,6 +166,7 @@ export function useBackend() {
         setServices((prev) => [...prev, {
           name: d.name, status: "stopped", port: d.port,
           uptime: "-", uptimeSec: 0, cmd: d.cmd, color: d.color, pid: 0,
+          restart: "never", restartCount: 0,
         }]);
       }
       return;
@@ -162,6 +186,33 @@ export function useBackend() {
     if (isDev) return;
     await window.go.desktop.App.LoadConfig(path);
     refresh();
+  }, [refresh]);
+
+  const exportLogs = useCallback(async () => {
+    if (isDev) return;
+    try { await window.go.desktop.App.ExportLogsToFile(); } catch { /* dialog cancelled */ }
+  }, []);
+
+  const getConfigRaw = useCallback(async (): Promise<string> => {
+    if (isDev) return mockConfigRaw;
+    try { return await window.go.desktop.App.GetConfigRaw(); } catch { return ""; }
+  }, []);
+
+  const saveConfigRaw = useCallback(async (content: string): Promise<void> => {
+    if (isDev) return;
+    await window.go.desktop.App.SaveConfigRaw(content);
+    refresh();
+  }, [refresh]);
+
+  const reloadConfigIfChanged = useCallback(async (): Promise<boolean> => {
+    if (isDev) return false;
+    try {
+      const changed = await window.go.desktop.App.ReloadConfigIfChanged();
+      if (changed) refresh();
+      return changed;
+    } catch {
+      return false;
+    }
   }, [refresh]);
 
   return {
@@ -184,5 +235,9 @@ export function useBackend() {
     generateDemo,
     loadConfig,
     refresh,
+    exportLogs,
+    getConfigRaw,
+    saveConfigRaw,
+    reloadConfigIfChanged,
   };
 }

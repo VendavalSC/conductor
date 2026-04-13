@@ -1,17 +1,20 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { Header } from "./components/Header";
 import { ServiceRow } from "./components/ServiceRow";
 import { LogPanel } from "./components/LogPanel";
 import { AddServiceModal } from "./components/AddServiceModal";
 import { ScanModal } from "./components/ScanModal";
 import { useBackend } from "./hooks/useBackend";
-import { PlusIcon, ScanIcon, LayersIcon, TerminalIcon, HeartPulseIcon } from "./components/Icons";
+import { PlusIcon, ScanIcon, LayersIcon, TerminalIcon, HeartPulseIcon, SettingsIcon } from "./components/Icons";
+
+type RightTab = "logs" | "config";
 
 export function App() {
   const {
     services, logs, running, projectName,
     startAll, stopAll, restartService, stopService, startService,
     addService, removeService, scanDirectory, selectDirectory, importDetected, generateDemo,
+    exportLogs, getConfigRaw, saveConfigRaw, reloadConfigIfChanged,
   } = useBackend();
 
   const [selectedService, setSelectedService] = useState<string | null>(null);
@@ -19,6 +22,11 @@ export function App() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showScanModal, setShowScanModal] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  const [rightTab, setRightTab] = useState<RightTab>("logs");
+  const [configRaw, setConfigRaw] = useState("");
+  const [configDirty, setConfigDirty] = useState(false);
+  const [configSaving, setConfigSaving] = useState(false);
+  const [configError, setConfigError] = useState("");
 
   const healthyCount = useMemo(
     () => services.filter((s) => s.status === "healthy" || s.status === "running").length,
@@ -35,6 +43,44 @@ export function App() {
     for (const svc of services) map[svc.name] = svc.color;
     return map;
   }, [services]);
+
+  // Load raw config when switching to config tab.
+  const handleTabChange = useCallback(async (tab: RightTab) => {
+    setRightTab(tab);
+    if (tab === "config") {
+      const raw = await getConfigRaw();
+      setConfigRaw(raw);
+      setConfigDirty(false);
+      setConfigError("");
+    }
+  }, [getConfigRaw]);
+
+  // Hot-reload: poll for config changes when not running.
+  useEffect(() => {
+    if (running) return;
+    const interval = setInterval(async () => {
+      const changed = await reloadConfigIfChanged();
+      if (changed && rightTab === "config") {
+        const raw = await getConfigRaw();
+        setConfigRaw(raw);
+        setConfigDirty(false);
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [running, rightTab, reloadConfigIfChanged, getConfigRaw]);
+
+  const handleSaveConfig = async () => {
+    setConfigSaving(true);
+    setConfigError("");
+    try {
+      await saveConfigRaw(configRaw);
+      setConfigDirty(false);
+    } catch (e: unknown) {
+      setConfigError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setConfigSaving(false);
+    }
+  };
 
   const doRemove = () => {
     if (!confirmRemove) return;
@@ -137,27 +183,90 @@ export function App() {
           )}
         </div>
 
-        {/* Right: log panel */}
+        {/* Right panel */}
         <div className="flex-1 flex flex-col min-w-0 bg-conductor-bg">
-          {/* Log panel header */}
+          {/* Right panel header with tabs */}
           <div className="flex items-center justify-between h-[38px] px-4 border-b border-conductor-border-subtle">
-            <div className="flex items-center gap-2">
-              <TerminalIcon size={12} className="text-conductor-muted" />
-              <span className="text-[10px] font-semibold text-conductor-muted uppercase tracking-[0.1em]">
-                {logFilter || "Output"}
-              </span>
+            <div className="flex items-center gap-0.5">
+              <RightTabBtn
+                label="Output"
+                icon={<TerminalIcon size={11} />}
+                active={rightTab === "logs"}
+                onClick={() => handleTabChange("logs")}
+              />
+              <RightTabBtn
+                label="Config"
+                icon={<SettingsIcon size={11} />}
+                active={rightTab === "config"}
+                onClick={() => handleTabChange("config")}
+              />
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-[10px] text-conductor-muted/40 tabular-nums font-mono">
-                {filteredLogs.length} line{filteredLogs.length !== 1 ? "s" : ""}
-              </span>
-              <span className="text-[9px] text-conductor-muted/30 font-mono">
-                Ctrl+F search
-              </span>
+              {rightTab === "logs" && (
+                <>
+                  <span className="text-[10px] text-conductor-muted/40 tabular-nums font-mono">
+                    {filteredLogs.length} line{filteredLogs.length !== 1 ? "s" : ""}
+                  </span>
+                  <button
+                    onClick={exportLogs}
+                    className="text-[10px] text-conductor-muted/40 hover:text-conductor-muted transition-colors font-mono"
+                    title="Export logs to file"
+                  >
+                    export
+                  </button>
+                  <span className="text-[9px] text-conductor-muted/30 font-mono">
+                    Ctrl+F search
+                  </span>
+                </>
+              )}
+              {rightTab === "config" && (
+                <div className="flex items-center gap-2">
+                  {configError && (
+                    <span className="text-[10px] text-red-400/70 max-w-[200px] truncate">{configError}</span>
+                  )}
+                  {configDirty && (
+                    <button
+                      onClick={handleSaveConfig}
+                      disabled={configSaving}
+                      className="h-[22px] px-2.5 rounded-md bg-conductor-accent/[0.1] text-conductor-accent border border-conductor-accent/[0.15] text-[10px] font-semibold hover:bg-conductor-accent/[0.18] disabled:opacity-40 transition-all"
+                    >
+                      {configSaving ? "Saving…" : "Save"}
+                    </button>
+                  )}
+                  {!configDirty && !configError && (
+                    <span className="text-[10px] text-conductor-muted/30 font-mono">
+                      {running ? "stop services to edit" : "Ctrl+S to save"}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
-          <LogPanel logs={logs} filter={logFilter} serviceColorMap={serviceColorMap} />
+          {rightTab === "logs" ? (
+            <LogPanel logs={logs} filter={logFilter} serviceColorMap={serviceColorMap} />
+          ) : (
+            <div className="flex-1 flex flex-col min-h-0">
+              <textarea
+                value={configRaw}
+                onChange={(e) => {
+                  setConfigRaw(e.target.value);
+                  setConfigDirty(true);
+                  setConfigError("");
+                }}
+                onKeyDown={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+                    e.preventDefault();
+                    if (configDirty && !running) handleSaveConfig();
+                  }
+                }}
+                readOnly={running}
+                spellCheck={false}
+                className="flex-1 resize-none bg-transparent font-mono text-[11px] text-conductor-text/80 p-4 outline-none leading-relaxed placeholder:text-conductor-muted/30"
+                placeholder="# conductor.yaml will appear here once loaded"
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -165,7 +274,7 @@ export function App() {
       <div className="relative flex items-center justify-between h-[26px] px-4 border-t border-conductor-border bg-conductor-surface/40">
         <div className="flex items-center gap-3">
           <span className="text-[10px] text-conductor-muted/40 font-mono tracking-wide">
-            conductor v1.0.0
+            conductor v1.1.0
           </span>
         </div>
         <div className="flex items-center gap-3">
@@ -207,7 +316,6 @@ export function App() {
         <div className="fixed inset-0 z-50 flex items-center justify-center animate-fade-in">
           <div className="absolute inset-0 bg-black/75 backdrop-blur-sm" onClick={() => setConfirmRemove(null)} />
           <div className="relative w-[380px] bg-conductor-surface border border-conductor-border rounded-2xl shadow-modal animate-scale-in overflow-hidden">
-            {/* Danger gradient */}
             <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-red-500/30 to-transparent" />
 
             <div className="p-6">
@@ -309,6 +417,32 @@ function FilterTab({
           style={{ backgroundColor: filterColorHex[color] || "#727289" }}
         />
       )}
+      {label}
+    </button>
+  );
+}
+
+function RightTabBtn({
+  label,
+  icon,
+  active,
+  onClick,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 h-[26px] px-2.5 rounded-md text-[10px] font-semibold transition-all duration-100 ${
+        active
+          ? "text-conductor-accent bg-conductor-accent/[0.08]"
+          : "text-conductor-muted hover:text-conductor-dim hover:bg-white/[0.03]"
+      }`}
+    >
+      {icon}
       {label}
     </button>
   );

@@ -3,6 +3,7 @@ package process
 import (
 	"context"
 	"fmt"
+	"net"
 	"sync"
 	"time"
 
@@ -14,6 +15,10 @@ type Manager struct {
 	Processes map[string]*Process
 	LogCh     chan LogLine
 
+	crashCh       chan string
+	restartCounts map[string]int
+	restartMu     sync.RWMutex
+
 	mu     sync.RWMutex
 	ctx    context.Context
 	closed bool
@@ -21,9 +26,11 @@ type Manager struct {
 
 func NewManager(cfg *config.Config) *Manager {
 	return &Manager{
-		Config:    cfg,
-		Processes: make(map[string]*Process),
-		LogCh:     make(chan LogLine, 1024),
+		Config:        cfg,
+		Processes:     make(map[string]*Process),
+		LogCh:         make(chan LogLine, 1024),
+		crashCh:       make(chan string, 32),
+		restartCounts: make(map[string]int),
 	}
 }
 
@@ -41,9 +48,30 @@ func (m *Manager) StartAll(ctx context.Context) error {
 		return fmt.Errorf("failed to resolve start order: %w", err)
 	}
 
+	// Check for port conflicts before starting.
 	for _, name := range order {
 		svc := m.Config.Services[name]
-		proc := New(name, svc, m.LogCh)
+		if svc.Port > 0 && !checkPortFree(svc.Port) {
+			m.sendLog(LogLine{
+				Service:   name,
+				Text:      fmt.Sprintf("warning: port %d already in use — service may fail to bind", svc.Port),
+				IsStderr:  true,
+				Timestamp: time.Now(),
+			})
+		}
+	}
+
+	// Reset restart counts.
+	m.restartMu.Lock()
+	m.restartCounts = make(map[string]int)
+	m.restartMu.Unlock()
+
+	// Start crash watcher.
+	go m.watchCrashes(ctx)
+
+	for _, name := range order {
+		svc := m.Config.Services[name]
+		proc := New(name, svc, m.LogCh, m.crashCh)
 
 		m.mu.Lock()
 		m.Processes[name] = proc
@@ -68,6 +96,73 @@ func (m *Manager) StartAll(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// watchCrashes listens for crashed processes and restarts them according to policy.
+func (m *Manager) watchCrashes(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case name, ok := <-m.crashCh:
+			if !ok {
+				return
+			}
+			svc, exists := m.Config.Services[name]
+			if !exists {
+				continue
+			}
+
+			policy := svc.Restart
+			if policy != "always" && policy != "on-failure" {
+				continue
+			}
+
+			m.restartMu.Lock()
+			count := m.restartCounts[name]
+			if svc.MaxRestarts > 0 && count >= svc.MaxRestarts {
+				m.restartMu.Unlock()
+				m.sendLog(LogLine{
+					Service:   name,
+					Text:      fmt.Sprintf("max restarts (%d) reached — giving up", svc.MaxRestarts),
+					IsStderr:  true,
+					Timestamp: time.Now(),
+				})
+				continue
+			}
+			m.restartCounts[name] = count + 1
+			m.restartMu.Unlock()
+
+			// Exponential backoff: 1s, 2s, 4s, … capped at 30s.
+			delay := time.Duration(1<<uint(count)) * time.Second
+			if delay > 30*time.Second {
+				delay = 30 * time.Second
+			}
+
+			m.sendLog(LogLine{
+				Service:   name,
+				Text:      fmt.Sprintf("crashed — restarting in %v (attempt %d)", delay, count+1),
+				IsStderr:  true,
+				Timestamp: time.Now(),
+			})
+
+			go func(svcName string, d time.Duration) {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(d):
+				}
+				if err := m.StartService(ctx, svcName); err != nil {
+					m.sendLog(LogLine{
+						Service:   svcName,
+						Text:      fmt.Sprintf("restart failed: %v", err),
+						IsStderr:  true,
+						Timestamp: time.Now(),
+					})
+				}
+			}(name, delay)
+		}
+	}
 }
 
 func waitForReady(ctx context.Context, name string, svc *config.Service) {
@@ -150,6 +245,11 @@ func (m *Manager) RestartService(ctx context.Context, name string) error {
 		Timestamp: time.Now(),
 	})
 
+	// Reset restart count on manual restart.
+	m.restartMu.Lock()
+	m.restartCounts[name] = 0
+	m.restartMu.Unlock()
+
 	return proc.Restart(ctx)
 }
 
@@ -184,7 +284,23 @@ func (m *Manager) GetProcess(name string) (*Process, bool) {
 	return p, ok
 }
 
+func (m *Manager) GetRestartCount(name string) int {
+	m.restartMu.RLock()
+	defer m.restartMu.RUnlock()
+	return m.restartCounts[name]
+}
+
 func (m *Manager) ServiceNames() []string {
 	order, _ := m.Config.StartOrder()
 	return order
+}
+
+// checkPortFree returns false if the port is already bound by another process.
+func checkPortFree(port int) bool {
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		return false
+	}
+	_ = ln.Close()
+	return true
 }

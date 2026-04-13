@@ -13,15 +13,17 @@ import (
 
 // AddServiceInput is the data received from the UI to add a new service.
 type AddServiceInput struct {
-	Name      string            `json:"name"`
-	Cmd       string            `json:"cmd"`
-	Dir       string            `json:"dir"`
-	Port      int               `json:"port"`
-	Color     string            `json:"color"`
-	Env       map[string]string `json:"env"`
-	DependsOn []string          `json:"dependsOn"`
-	HealthURL string            `json:"healthUrl"`
-	HealthCmd string            `json:"healthCmd"`
+	Name        string            `json:"name"`
+	Cmd         string            `json:"cmd"`
+	Dir         string            `json:"dir"`
+	Port        int               `json:"port"`
+	Color       string            `json:"color"`
+	Env         map[string]string `json:"env"`
+	DependsOn   []string          `json:"dependsOn"`
+	HealthURL   string            `json:"healthUrl"`
+	HealthCmd   string            `json:"healthCmd"`
+	Restart     string            `json:"restart"`
+	MaxRestarts int               `json:"maxRestarts"`
 }
 
 // AddService adds a service to the config and writes conductor.yaml.
@@ -112,7 +114,7 @@ func (a *App) HasConfig() bool {
 	return a.cfg != nil && len(a.cfg.Services) > 0
 }
 
-// GetConfigRaw returns the raw YAML content of the current config.
+// GetConfigRaw returns the raw YAML content of the current config file.
 func (a *App) GetConfigRaw() (string, error) {
 	path := filepath.Join(mustGetwd(), "conductor.yaml")
 	data, err := os.ReadFile(path)
@@ -120,6 +122,24 @@ func (a *App) GetConfigRaw() (string, error) {
 		return "", fmt.Errorf("no conductor.yaml found: %w", err)
 	}
 	return string(data), nil
+}
+
+// SaveConfigRaw writes raw YAML content to conductor.yaml and reloads config.
+func (a *App) SaveConfigRaw(content string) error {
+	path := filepath.Join(mustGetwd(), "conductor.yaml")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		return fmt.Errorf("config saved but has parse errors: %w", err)
+	}
+	a.cfg = cfg
+	a.configPath = path
+	if info, err := os.Stat(path); err == nil {
+		a.configModTime = info.ModTime()
+	}
+	return nil
 }
 
 // SelectDirectory opens a native directory picker dialog.
@@ -171,9 +191,10 @@ func (a *App) GenerateDemo(dir string) error {
 		Name: "conductor-demo",
 		Services: map[string]*config.Service{
 			"webserver": {
-				Cmd:   "python3 -m http.server 8000",
-				Port:  8000,
-				Color: "cyan",
+				Cmd:     "python3 -m http.server 8000",
+				Port:    8000,
+				Color:   "cyan",
+				Restart: "on-failure",
 				Health: &config.HealthCheck{
 					URL:      "http://localhost:8000",
 					Interval: 3 * time.Second,
@@ -182,13 +203,15 @@ func (a *App) GenerateDemo(dir string) error {
 				},
 			},
 			"ticker": {
-				Cmd:   `bash -c 'while true; do echo "[$(date +%H:%M:%S)] tick"; sleep 1; done'`,
-				Color: "green",
+				Cmd:     `bash -c 'while true; do echo "[$(date +%H:%M:%S)] tick"; sleep 1; done'`,
+				Color:   "green",
+				Restart: "always",
 			},
 			"counter": {
 				Cmd:       `bash -c 'i=0; while true; do echo "count=$i"; i=$((i+1)); sleep 2; done'`,
 				Color:     "yellow",
 				DependsOn: []string{"webserver"},
+				Restart:   "on-failure",
 			},
 			"monitor": {
 				Cmd:   `bash -c 'while true; do echo "mem=$(free -m 2>/dev/null | awk "/Mem:/{print \$3}" || echo "N/A")MB load=$(cat /proc/loadavg 2>/dev/null | cut -d" " -f1 || echo "N/A")"; sleep 5; done'`,
@@ -198,6 +221,7 @@ func (a *App) GenerateDemo(dir string) error {
 				Cmd:       `bash -c 'names=(Alice Bob Charlie Diana Eve); while true; do echo "Hello ${names[RANDOM % ${#names[@]}]}! The time is $(date +%H:%M:%S)"; sleep 3; done'`,
 				Color:     "blue",
 				DependsOn: []string{"ticker"},
+				Restart:   "always",
 			},
 		},
 	}
@@ -216,13 +240,15 @@ func (a *App) saveConfigTo(path string) error {
 		Interval string `yaml:"interval,omitempty"`
 	}
 	type yamlService struct {
-		Cmd       string            `yaml:"cmd"`
-		Dir       string            `yaml:"dir,omitempty"`
-		Port      int               `yaml:"port,omitempty"`
-		Color     string            `yaml:"color,omitempty"`
-		Env       map[string]string `yaml:"env,omitempty"`
-		DependsOn []string          `yaml:"depends_on,omitempty"`
-		Health    *yamlHealth       `yaml:"health,omitempty"`
+		Cmd         string            `yaml:"cmd"`
+		Dir         string            `yaml:"dir,omitempty"`
+		Port        int               `yaml:"port,omitempty"`
+		Color       string            `yaml:"color,omitempty"`
+		Env         map[string]string `yaml:"env,omitempty"`
+		DependsOn   []string          `yaml:"depends_on,omitempty"`
+		Health      *yamlHealth       `yaml:"health,omitempty"`
+		Restart     string            `yaml:"restart,omitempty"`
+		MaxRestarts int               `yaml:"max_restarts,omitempty"`
 	}
 	type yamlConfig struct {
 		Name     string                  `yaml:"name"`
@@ -236,12 +262,14 @@ func (a *App) saveConfigTo(path string) error {
 
 	for name, svc := range a.cfg.Services {
 		ys := &yamlService{
-			Cmd:       svc.Cmd,
-			Dir:       svc.Dir,
-			Port:      svc.Port,
-			Color:     svc.Color,
-			Env:       svc.Env,
-			DependsOn: svc.DependsOn,
+			Cmd:         svc.Cmd,
+			Dir:         svc.Dir,
+			Port:        svc.Port,
+			Color:       svc.Color,
+			Env:         svc.Env,
+			DependsOn:   svc.DependsOn,
+			Restart:     svc.Restart,
+			MaxRestarts: svc.MaxRestarts,
 		}
 		if svc.Health != nil {
 			ys.Health = &yamlHealth{
@@ -266,12 +294,14 @@ func (a *App) saveConfigTo(path string) error {
 
 func inputToService(input AddServiceInput) *config.Service {
 	svc := &config.Service{
-		Cmd:       input.Cmd,
-		Dir:       input.Dir,
-		Port:      input.Port,
-		Color:     input.Color,
-		Env:       input.Env,
-		DependsOn: input.DependsOn,
+		Cmd:         input.Cmd,
+		Dir:         input.Dir,
+		Port:        input.Port,
+		Color:       input.Color,
+		Env:         input.Env,
+		DependsOn:   input.DependsOn,
+		Restart:     input.Restart,
+		MaxRestarts: input.MaxRestarts,
 	}
 
 	if input.HealthURL != "" || input.HealthCmd != "" {

@@ -16,6 +16,7 @@ services:
     cmd: python3 -m http.server 8000
     port: 8000
     color: cyan
+    restart: on-failure
     health:
       url: http://localhost:8000
       interval: 3s
@@ -23,10 +24,12 @@ services:
   ticker:
     cmd: bash -c 'while true; do echo "[$(date +%H:%M:%S)] tick"; sleep 1; done'
     color: green
+    restart: always
 
   counter:
     cmd: bash -c 'i=0; while true; do echo "count=$i"; i=$((i+1)); sleep 2; done'
     color: yellow
+    restart: on-failure
     depends_on:
       - webserver
 
@@ -37,6 +40,7 @@ services:
   greeter:
     cmd: bash -c 'names=(Alice Bob Charlie Diana Eve); while true; do echo "Hello ${names[RANDOM % ${#names[@]}]}! The time is $(date +%H:%M:%S)"; sleep 3; done'
     color: blue
+    restart: always
     depends_on:
       - ticker
 `

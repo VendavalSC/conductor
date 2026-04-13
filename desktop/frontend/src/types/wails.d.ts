@@ -7,6 +7,8 @@ export interface ServiceInfo {
   cmd: string;
   color: string;
   pid: number;
+  restart: string;
+  restartCount: number;
 }
 
 export interface LogEntry {
@@ -26,6 +28,8 @@ export interface AddServiceInput {
   dependsOn: string[];
   healthUrl: string;
   healthCmd: string;
+  restart: string;
+  maxRestarts: number;
 }
 
 export interface DetectedService {
@@ -61,6 +65,9 @@ declare global {
           InitConfig(dir: string): Promise<void>;
           GetConfigPath(): Promise<string>;
           GetConfigRaw(): Promise<string>;
+          SaveConfigRaw(content: string): Promise<void>;
+          ReloadConfigIfChanged(): Promise<boolean>;
+          ExportLogsToFile(): Promise<void>;
           SelectDirectory(): Promise<string>;
           ScanDirectory(dir: string): Promise<DetectedService[]>;
           ImportDetected(services: DetectedService[]): Promise<void>;

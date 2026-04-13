@@ -28,16 +28,20 @@ Conductor is a lightweight, powerful process orchestrator designed for modern de
 - **💚 Health Monitoring** — HTTP or command-based health verification with visual indicators
 - **📊 Unified Logs** — Color-coded, aggregated logs from all services with real-time streaming
 - **🔄 Live Reload** — Restart services on-the-fly without stopping others
+- **♻️ Auto-Restart** — Configurable restart policies (`always`, `on-failure`, `never`) with exponential backoff
 - **🔍 Auto-Discovery** — Scan projects and detect services from `package.json`, `go.mod`, `Cargo.toml`, `docker-compose.yml`, `pyproject.toml`
 - **🖥️ UI Management** — Add, remove, configure services directly from the desktop app
 - **🌍 Cross-Platform** — Linux, macOS, Windows support
 - **📦 Zero Dependencies** — Single binary, no external runtime required
 
-### Desktop App
+### Desktop App (v1.1.0)
 - **Scan & Setup** — Browse any directory; auto-detect services and dependencies
-- **Visual Dashboard** — Real-time status dots, uptime, PID, port monitoring
-- **Service Forms** — Intuitive UI for creating and managing services with color picker
-- **Smart Logs** — Filterable, auto-scrolling, color-coded log viewer
+- **Visual Dashboard** — Real-time status dots, uptime, PID, port monitoring, restart counts
+- **Service Forms** — Intuitive UI for creating and managing services with color picker, env vars, depends_on
+- **Smart Logs** — Filterable, auto-scrolling, color-coded log viewer with Ctrl+F search and file export
+- **Config Editor** — Edit `conductor.yaml` directly in the app with live validation
+- **Config Hot-Reload** — Desktop app detects changes to `conductor.yaml` and reloads automatically
+- **Port Conflict Detection** — Warns before starting if a configured port is already in use
 - **Safe Operations** — Confirmation dialogs prevent accidental config changes
 - **Demo Mode** — One-click demo project to explore features
 
@@ -170,6 +174,27 @@ name: my-app          # Project name (required)
 | `env` | object | Environment variables (inherited by child process) |
 | `depends_on` | array | Service dependencies (startup order) |
 | `health` | object | Health check configuration |
+| `restart` | string | Restart policy: `never` (default), `on-failure`, `always` |
+| `max_restarts` | integer | Maximum restart attempts (`0` = unlimited, default: `0`) |
+
+### Restart Policies
+
+```yaml
+services:
+  web:
+    cmd: npm run dev
+    restart: on-failure   # restart only if process exits non-zero
+    max_restarts: 5       # give up after 5 attempts (exponential backoff: 1s, 2s, 4s…)
+
+  worker:
+    cmd: ./worker
+    restart: always       # restart even on clean exit
+    max_restarts: 0       # unlimited restarts
+
+  db:
+    cmd: postgres
+    restart: never        # default — don't restart
+```
 
 ### Health Check Configuration
 
@@ -257,8 +282,13 @@ health:
 - [x] Auto-discovery (package.json, go.mod, Cargo.toml, docker-compose, pyproject.toml)
 - [x] Desktop entry for Linux app launchers
 - [x] Demo project generator
+- [x] **Auto-restart on crash** (`always`, `on-failure`, `never` with exponential backoff)
+- [x] **Port conflict detection** (warns before start if port is already bound)
+- [x] **Config hot-reload** (desktop app detects conductor.yaml changes)
+- [x] **Raw config editor** (edit YAML directly in the desktop app)
+- [x] **Log export to file** (save logs via native file dialog)
+- [x] **Env vars & depends_on in Add Service UI**
 - [ ] System tray with crash notifications
-- [ ] Config hot-reload (watch conductor.yaml)
 - [ ] Unix socket IPC (signals running instance)
 - [ ] Plugin system for custom health checks
 - [ ] Save/restore session profiles
