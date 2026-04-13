@@ -18,7 +18,7 @@ func newVersionCmd() *cobra.Command {
 
 			fmt.Printf("\n %s %s\n",
 				accent.Render("⚡ Conductor"),
-				dim.Render(fmt.Sprintf("v%s (%s) built %s", version.Version, version.Commit, version.Date, "made by Vendi")),
+				dim.Render(fmt.Sprintf("v%s (%s) built %s — made by Vendi", version.Version, version.Commit, version.Date)),
 			)
 			fmt.Println()
 		},
