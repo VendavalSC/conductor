@@ -1,6 +1,6 @@
 BINARY    := conductor
 PREFIX    ?= $(HOME)/.local
-VERSION   := $(shell git describe --tags --always --dirty 2>/dev/null || echo "1.0.0-dev")
+VERSION   := $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//' || echo "1.1.0-dev")
 COMMIT    := $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
 DATE      := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS   := -s -w \
