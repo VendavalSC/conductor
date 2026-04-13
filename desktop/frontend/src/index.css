@@ -1,0 +1,95 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: #06060b;
+  overflow: hidden;
+}
+
+/* Premium scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+::selection {
+  background: rgba(0, 191, 255, 0.2);
+  color: #eeeef4;
+}
+
+/* Smooth global transitions */
+button, input, [role="button"] {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Service color accent vars */
+.svc-cyan    { --svc-color: 0 191 255; --svc-hex: #00bfff; }
+.svc-green   { --svc-color: 0 230 118; --svc-hex: #00e676; }
+.svc-yellow  { --svc-color: 255 171 0; --svc-hex: #ffab00; }
+.svc-magenta { --svc-color: 236 72 153; --svc-hex: #ec4899; }
+.svc-blue    { --svc-color: 59 130 246; --svc-hex: #3b82f6; }
+.svc-red     { --svc-color: 255 82 82; --svc-hex: #ff5252; }
+.svc-orange  { --svc-color: 255 152 0; --svc-hex: #ff9800; }
+.svc-purple  { --svc-color: 168 85 247; --svc-hex: #a855f7; }
+
+/* Noise texture overlay */
+.noise-overlay::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.015'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Log line number gutter */
+.log-gutter {
+  min-width: 2.5rem;
+  text-align: right;
+  user-select: none;
+  color: rgba(255, 255, 255, 0.08);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Gradient border effect */
+.gradient-border {
+  position: relative;
+}
+.gradient-border::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}

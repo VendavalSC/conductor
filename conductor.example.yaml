@@ -1,0 +1,51 @@
+# conductor.yaml — orchestrate your dev environment
+#
+# Define your services, their commands, ports, and health checks.
+# Run `conductor up` to start everything.
+
+name: my-project
+
+services:
+  web:
+    cmd: npm run dev
+    dir: ./frontend
+    port: 3000
+    color: cyan
+    health:
+      url: http://localhost:3000
+      interval: 5s
+    env:
+      NODE_ENV: development
+    depends_on:
+      - api
+
+  api:
+    cmd: go run ./cmd/server
+    dir: ./backend
+    port: 8080
+    color: green
+    depends_on:
+      - db
+      - redis
+    health:
+      url: http://localhost:8080/health
+      interval: 10s
+    env:
+      DATABASE_URL: postgres://localhost:5432/mydb
+      REDIS_URL: redis://localhost:6379
+
+  db:
+    cmd: postgres -D /usr/local/var/postgres
+    port: 5432
+    color: yellow
+    health:
+      cmd: pg_isready -h localhost
+      interval: 5s
+
+  redis:
+    cmd: redis-server
+    port: 6379
+    color: red
+    health:
+      cmd: redis-cli ping
+      interval: 5s

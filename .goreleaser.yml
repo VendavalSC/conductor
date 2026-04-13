@@ -1,0 +1,46 @@
+version: 2
+project_name: conductor
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - main: ./cmd/conductor/
+    binary: conductor
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/vendi/conductor/internal/version.Version={{.Version}}
+      - -X github.com/vendi/conductor/internal/version.Commit={{.ShortCommit}}
+      - -X github.com/vendi/conductor/internal/version.Date={{.Date}}
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+      - conductor.example.yaml
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"

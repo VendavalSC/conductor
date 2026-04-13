@@ -1,0 +1,26 @@
+# Test config — uses only basic tools available on any Linux system.
+# Run: conductor up -c test-conductor.yaml
+name: conductor-demo
+
+services:
+  webserver:
+    cmd: python3 -m http.server 8000
+    port: 8000
+    color: cyan
+    health:
+      url: http://localhost:8000
+      interval: 3s
+
+  ticker:
+    cmd: bash -c 'while true; do echo "[$(date +%H:%M:%S)] tick"; sleep 1; done'
+    color: green
+
+  counter:
+    cmd: bash -c 'i=0; while true; do echo "count=$i requests=$(curl -s -o /dev/null -w %{http_code} http://localhost:8000 2>/dev/null)"; i=$((i+1)); sleep 3; done'
+    color: yellow
+    depends_on:
+      - webserver
+
+  logger:
+    cmd: bash -c 'echo "logger started"; while true; do echo "mem=$(free -m | awk "/Mem:/{print \$3}")MB cpu=$(grep -c ^processor /proc/cpuinfo)cores"; sleep 5; done'
+    color: magenta
