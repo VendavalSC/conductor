@@ -4,6 +4,7 @@ import { ServiceRow } from "./components/ServiceRow";
 import { LogPanel } from "./components/LogPanel";
 import { AddServiceModal } from "./components/AddServiceModal";
 import { ScanModal } from "./components/ScanModal";
+import { ConfigEditor } from "./components/ConfigEditor";
 import { useBackend } from "./hooks/useBackend";
 import { PlusIcon, ScanIcon, LayersIcon, TerminalIcon, HeartPulseIcon, SettingsIcon } from "./components/Icons";
 
@@ -246,26 +247,12 @@ export function App() {
           {rightTab === "logs" ? (
             <LogPanel logs={logs} filter={logFilter} serviceColorMap={serviceColorMap} />
           ) : (
-            <div className="flex-1 flex flex-col min-h-0">
-              <textarea
-                value={configRaw}
-                onChange={(e) => {
-                  setConfigRaw(e.target.value);
-                  setConfigDirty(true);
-                  setConfigError("");
-                }}
-                onKeyDown={(e) => {
-                  if ((e.metaKey || e.ctrlKey) && e.key === "s") {
-                    e.preventDefault();
-                    if (configDirty && !running) handleSaveConfig();
-                  }
-                }}
-                readOnly={running}
-                spellCheck={false}
-                className="flex-1 resize-none bg-transparent font-mono text-[11px] text-conductor-text/80 p-4 outline-none leading-relaxed placeholder:text-conductor-muted/30"
-                placeholder="# conductor.yaml will appear here once loaded"
-              />
-            </div>
+            <ConfigEditor
+              value={configRaw}
+              onChange={(v) => { setConfigRaw(v); setConfigDirty(true); setConfigError(""); }}
+              onSave={handleSaveConfig}
+              readOnly={running}
+            />
           )}
         </div>
       </div>
